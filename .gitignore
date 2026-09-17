@@ -1,0 +1,25 @@
+.idea/
+__pycache__/
+*.py[cod]
+
+build/
+dist/
+*.egg-info/
+
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+tmp/
+data/docked/
+data/downloads/
+data/tmp/
+data/raw/
+data/training/
+
+*.log
+
+# Released separately as a GitHub Release asset.
+/model/vs_model.ckpt

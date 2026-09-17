@@ -1,0 +1,31 @@
+<DockingParameters>
+  <ForceField>
+    <Type name="Br" radius="4.189" depth="0.251"/>
+    <Type name="C" radius="4.051" depth="0.105"/>
+    <Type name="Cl" radius="3.947" depth="0.227"/>
+    <Type name="F" radius="3.364" depth="0.05"/>
+    <Type name="HB_N_N" radius="2.9" depth="0.3"/>
+    <Type name="HB_N_O" radius="2.9" depth="0.3"/>
+    <Type name="HB_Np_N" radius="2.9" depth="0.5"/>
+    <Type name="HB_Np_O" radius="2.9" depth="0.5"/>
+    <Type name="HB_Np_On" radius="2.9" depth="0.7"/>
+    <Type name="HB_O_O" radius="2.9" depth="0.3"/>
+    <Type name="HB_On_N" radius="2.9" depth="0.5"/>
+    <Type name="HB_On_O" radius="2.9" depth="0.5"/>
+    <Type name="I" radius="4.5" depth="0.339"/>
+    <Type name="MB_Met_N" radius="2.2" depth="0.7"/>
+    <Type name="MB_Met_O" radius="2.2" depth="0.7"/>
+    <Type name="Met" radius="2.8" depth="0.05"/>
+    <Type name="N" radius="3.66" depth="0.069"/>
+    <Type name="Np" radius="3.66" depth="0.069"/>
+    <Type name="O" radius="3.5" depth="0.06"/>
+    <Type name="On" radius="3.5" depth="0.06"/>
+    <Type name="P" radius="4.147" depth="0.305"/>
+    <Type name="S" radius="4.035" depth="0.274"/>
+    <Type name="U" radius="2.8" depth="0.05"/>
+    <Type name="XB_Br_O" radius="3.5" depth="0.2"/>
+    <Type name="XB_Cl_O" radius="3.5" depth="0.2"/>
+    <Type name="XB_I_O" radius="3.5" depth="0.2"/>
+  </ForceField>
+  <Config/>
+</DockingParameters>
