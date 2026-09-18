@@ -1,8 +1,10 @@
+import io
 import os
 import random
 from collections import deque
 
 import numpy as np
+from Bio.PDB import MMCIFParser, PDBIO
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem
 from rdkit.ML.Cluster import Butina
@@ -19,6 +21,28 @@ CHARGE_PATTERN = [
 ]
 
 
+def _read_cif_mol(file_path, removeHs=True, sanitize=True):
+    """Read a CIF/mmCIF structure through Bio.PDB and return an RDKit molecule.
+
+    RDKit does not provide a mmCIF reader.  Bio.PDB parses the CIF structure,
+    and PDBIO serializes it to an in-memory PDB block so RDKit can retain the
+    atom coordinates and PDB residue metadata used by CLIPDock.
+    """
+    try:
+        structure = MMCIFParser(QUIET=True).get_structure("structure", file_path)
+        pdb_buffer = io.StringIO()
+        pdb_writer = PDBIO()
+        pdb_writer.set_structure(structure)
+        pdb_writer.save(pdb_buffer)
+        return Chem.MolFromPDBBlock(
+            pdb_buffer.getvalue(),
+            removeHs=removeHs,
+            sanitize=sanitize,
+        )
+    except Exception:
+        return None
+
+
 def read_mol(file_path, try_mol=True, sdf_list=False, removeHs=True, sanitize=True):
     name, ext = os.path.splitext(file_path)
     ext = ext.lower()
@@ -27,6 +51,8 @@ def read_mol(file_path, try_mol=True, sdf_list=False, removeHs=True, sanitize=Tr
             mol = Chem.MolFromPDBFile(file_path, removeHs=removeHs, sanitize=sanitize)
         except Exception:
             mol = None
+    elif ext in {'.cif', '.mmcif'}:
+        mol = _read_cif_mol(file_path, removeHs=removeHs, sanitize=sanitize)
     elif ext == '.sdf':
         if sdf_list:
             try:

@@ -1,3 +1,4 @@
+import os
 import re
 import warnings
 
@@ -12,7 +13,13 @@ warnings.filterwarnings("ignore", category=BiopythonWarning)
 
 
 def remove_clashing_bonds(pdb_path, max_distance=2.0):
-    mol = Chem.MolFromPDBFile(pdb_path, sanitize=False, removeHs=False)
+    extension = os.path.splitext(pdb_path)[1].lower()
+    if extension in {'.cif', '.mmcif'}:
+        mol = read_mol(pdb_path, sanitize=False, removeHs=False)
+    else:
+        mol = Chem.MolFromPDBFile(pdb_path, sanitize=False, removeHs=False)
+    if mol is None:
+        raise ValueError(f"Failed to read receptor structure: {pdb_path}")
     edit_mol = Chem.RWMol(mol)
     conf = mol.GetConformer()
 
@@ -88,9 +95,10 @@ class PocketSelector(Select):
 
 
 def extract_pocket_from_coords(coords, protein_path, out_pocket_path, remove_water=False, remove_cofactor=False, threshold=8.0, exclude_coords=None):
-    if protein_path.endswith('.pdb'):
+    extension = os.path.splitext(protein_path)[1].lower()
+    if extension == '.pdb':
         parser = PDBParser(QUIET=True)
-    elif protein_path.endswith('.cif'):
+    elif extension in {'.cif', '.mmcif'}:
         parser = MMCIFParser(QUIET=True)
     else:
         return

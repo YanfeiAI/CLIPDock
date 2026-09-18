@@ -14,7 +14,7 @@ def build_parser():
                         version=f"%(prog)s {VERSION}")
 
     parser.add_argument("-r", "--receptor",
-                        help="Receptor PDB file")
+                        help="Receptor structure file (PDB, CIF, or mmCIF)")
     ligand_group = parser.add_mutually_exclusive_group()
     ligand_group.add_argument("-l", "--ligand",
                               help="Ligand file (SDF, MOL2, etc.)")
@@ -58,7 +58,7 @@ def build_parser():
     parser_vs.add_argument("-o", "--output_dir", required=True,
                            help="Output directory")
     parser_vs.add_argument("-r", "--receptor", required=True,
-                           help="Receptor PDB file")
+                           help="Receptor structure file (PDB, CIF, or mmCIF)")
     parser_vs.add_argument("--ref", help="Reference ligand used for pocket extraction and initial placement of screened ligands")
     parser_vs.add_argument("--skip_extract_pocket", action="store_true",
                         help="Skip pocket extraction and use the receptor for docking")
