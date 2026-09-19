@@ -121,7 +121,7 @@ python -m model.train \
   --epoch 5
 ```
 
-This writes `model.pth` and `gscore.csv` to `data/training/gscore`. Pass
+This exports `gscore.csv` to `data/training/gscore`. Pass
 `data/training/gscore/gscore.csv` to `clipdock` or `clipdock vs` with
 `--gscore`.
 
@@ -138,6 +138,10 @@ python -m model.train_vs \
 
 The final checkpoint is `data/training/vs_score/last.ckpt`; pass it with
 `--model` to `clipdock vs-score`.
+
+Benchmark commands use the bundled models by default. To use newly trained
+models, pass `--gscore data/training/gscore/gscore.csv`; for virtual-screening
+enrichment, also pass `--model data/training/vs_score/last.ckpt`.
 
 ### Docking benchmarks
 

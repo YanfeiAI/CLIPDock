@@ -63,6 +63,8 @@ def run_target(target: Path, output: Path, args: argparse.Namespace) -> None:
     ]
     if args.workers is not None:
         command.extend(("--workers", str(args.workers)))
+    if args.gscore is not None:
+        command.extend(("--gscore", str(args.gscore.resolve())))
     subprocess.run(command, cwd=PROJECT_ROOT, check=True)
 
 
@@ -79,12 +81,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--target", action="append", help="Run one prepared target; repeat as needed")
     parser.add_argument("--restarts", type=int, default=32)
     parser.add_argument("--workers", type=int, default=None)
+    parser.add_argument("--gscore", type=Path, default=None,
+                        help="Path to the exported G-score parameter CSV")
     parser.add_argument("--analyze-only", action="store_true", help="Evaluate existing results.csv files")
     return parser
 
 
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
+    if args.gscore is not None and not args.gscore.is_file():
+        raise RuntimeError(f"G-score parameter file does not exist: {args.gscore}")
     data_root = args.data_root.resolve()
     output_root = args.output_root.resolve() / f"r{args.restarts}"
     if not data_root.is_dir():
