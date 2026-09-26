@@ -1,7 +1,4 @@
-# CLIPDock
-
-*CLIPDock: a contrastive learning-based interatomic potential model
-for accurate protein–ligand docking*
+# CLIPDock: a contrastive learning-based interatomic potential model for accurate protein–ligand docking
 
 CLIPDock combines an empirical interatomic potential with a
 contrastive learning-based interatomic potential model for molecular
@@ -10,7 +7,7 @@ screening.
 
 An online docking service is available at [clipdock.cn](https://clipdock.cn).
 
-## Installation
+## 1. Installation
 
 CLIPDock requires Python 3.11.
 
@@ -26,9 +23,12 @@ clipdock --version
 For docking only, without the PyTorch dependencies, use
 `python -m pip install -e .` instead.
 
-## Usage
+## 2. Usage
 
-A reference ligand is recommended to define the binding pocket.
+Docking runs on CPU. Remove any co-crystallized ligand from the receptor, and
+pass a reference ligand separately with `--ref` to define the binding pocket.
+
+### 2.1 Docking
 
 Dock an SDF or MOL2 ligand:
 
@@ -40,7 +40,7 @@ clipdock \
   -o data/9iwy_docked_ligand.sdf
 ```
 
-Dock a ligand from a SMILES string:
+Dock a ligand from SMILES:
 
 ```bash
 clipdock \
@@ -49,6 +49,8 @@ clipdock \
   --ref data/9iwy_ligand.sdf \
   -o data/9iwy_docked_ligand.sdf
 ```
+
+### 2.2 Virtual screening
 
 Prepare a screening example library:
 
@@ -67,6 +69,13 @@ clipdock vs \
   --ref data/9iwy_ligand.sdf
 ```
 
+### 2.3 VS-score rescoring
+
+Before using VS-score, download `vs_model.ckpt` from
+[GitHub Releases](https://github.com/YanfeiAI/CLIPDock/releases) and place it in
+the `model` directory. Use `--model` to load it from another location. VS-score
+may use a GPU. Set `--device -1` to run VS-score on CPU.
+
 Rescore all docked ligands with VS-score:
 
 ```bash
@@ -82,14 +91,9 @@ clipdock vs-score \
 This writes all VS-score results to `02_vs_score/vs_scores.csv` and the selected
 top 100 poses to `02_vs_score/top100/`.
 
-Lower CLIPDock scores and higher VS-scores are better. Use `--device -1` for
-CPU VS-score inference.
+Lower CLIPDock scores and higher VS-scores are better.
 
-Before using VS-score, download `vs_model.ckpt` from
-[GitHub Releases](https://github.com/YanfeiAI/CLIPDock/releases) and place it in
-the `model` directory. Use `--model` to load it from another location.
-
-## Reproduction datasets
+## 3. Reproduction datasets
 
 - [`PDBPL`](https://doi.org/10.5281/zenodo.22766987): 41,275 training and 783
   validation complexes
@@ -104,9 +108,9 @@ python script/prepare_data.py \
   --test-data-dir /path/to/CLIPDock_test_datasets
 ```
 
-## Reproducing the paper
+## 4. Reproducing the paper
 
-### Training
+### 4.1 Training
 
 Train G-score using the paper configuration:
 
@@ -143,7 +147,7 @@ Benchmark commands use the bundled models by default. To use newly trained
 models, pass `--gscore data/training/gscore/gscore.csv`; for virtual-screening
 enrichment, also pass `--model data/training/vs_score/last.ckpt`.
 
-### Docking benchmarks
+### 4.2 Docking benchmarks
 
 Evaluate the three CLIPDock test datasets with:
 
@@ -178,7 +182,7 @@ evaluation uses the official 308-complex subset from
 [Zenodo record 8278563](https://zenodo.org/records/8278563); PoseX is obtained
 from the official [PoseX dataset](https://huggingface.co/datasets/CataAI/PoseX).
 
-### Affinity ranking
+### 4.3 Affinity ranking
 
 The affinity benchmark uses 16 congeneric ligand series from the
 [public binding free energy benchmark](https://github.com/schrodinger/public_binding_free_energy_benchmark/tree/v1.0):
@@ -188,7 +192,7 @@ python script/prepare_affinity.py
 python script/affinity.py
 ```
 
-### Virtual-screening enrichment
+### 4.4 Virtual-screening enrichment
 
 The virtual-screening benchmark uses the public TrueDecoy and RandomDecoy
 datasets from
@@ -199,7 +203,7 @@ python script/prepare_vs.py
 python script/vs.py all --device 0
 ```
 
-## License
+## 5. License
 
 The CLIPDock source code and released model weights are distributed under the
 MIT License. External benchmark datasets retain their upstream licenses.
