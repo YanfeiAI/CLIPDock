@@ -29,14 +29,24 @@ class CLIPDockVS(nn.Module):
             nn.Linear(hidden_dim, num_gaussians)
         )
 
+    def encode_protein(self, prot_x, prot_edge_index, prot_edge_attr):
+        return self.prot_gnn(prot_x, prot_edge_index, prot_edge_attr)
+
+    def encode_ligand(self, lig_x, lig_edge_index, lig_edge_attr):
+        return self.lig_gnn(lig_x, lig_edge_index, lig_edge_attr)
+
     def forward(self, prot_x, prot_edge_index, prot_edge_attr, prot_batch,
                 lig_x, lig_edge_index, lig_edge_attr, lig_batch):
 
-        h_prot = self.prot_gnn(prot_x, prot_edge_index, prot_edge_attr)
-        h_lig = self.lig_gnn(lig_x, lig_edge_index, lig_edge_attr)
+        h_prot = self.encode_protein(prot_x, prot_edge_index, prot_edge_attr)
+        h_lig = self.encode_ligand(lig_x, lig_edge_index, lig_edge_attr)
 
+        return self.score_embeddings(h_prot, prot_batch, h_lig, lig_batch)
+
+    def score_embeddings(self, h_prot, prot_batch, h_lig, lig_batch):
+        """MDN head over precomputed node embeddings (identical to ``forward``)."""
         batch_size = int(prot_batch.max().item() + 1)
-        device = prot_x.device
+        device = h_prot.device
 
         count_p = torch.bincount(prot_batch, minlength=batch_size)
         count_l = torch.bincount(lig_batch, minlength=batch_size)

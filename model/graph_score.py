@@ -130,18 +130,79 @@ def collate_graphs(batch):
 
     return (prot_batch, lig_batch), names, smis, f_paths, m_indices
 
-def compute_mdn_scores_batch(model, batch_data, device):
+class ProteinEmbeddingCache:
+    """Reuse receptor-encoder output across batches of a single screening run.
+
+    Keyed by tensor shapes, device and autocast state; the receptor tensors are
+    compared bit-for-bit on first reuse, and the owning model plus ``pocket_key``
+    are checked on every call, so an embedding can never cross receptors or
+    checkpoints even when the shapes match.
+    """
+
+    def __init__(self, pocket_key=None, max_entries=2):
+        self._pocket_key = pocket_key
+        self._model = None
+        self._entries = {}
+        self._max_entries = max_entries
+
+    def _key(self, prot_x, prot_edge_index, prot_edge_attr, device, amp_enabled):
+        return (tuple(prot_x.shape), tuple(prot_edge_index.shape), tuple(prot_edge_attr.shape),
+                prot_x.dtype, prot_edge_index.dtype, prot_edge_attr.dtype,
+                str(device), bool(amp_enabled))
+
+    def get(self, model, prot_x, prot_edge_index, prot_edge_attr, device, amp_enabled,
+            pocket_key=None):
+        if pocket_key != self._pocket_key:
+            raise ValueError(
+                'ProteinEmbeddingCache was created for a different receptor: '
+                f'{self._pocket_key!r} != {pocket_key!r}')
+        if model is not self._model:
+            self._entries.clear()
+            self._model = model
+
+        key = self._key(prot_x, prot_edge_index, prot_edge_attr, device, amp_enabled)
+        entry = self._entries.get(key)
+        if entry is not None:
+            inputs, cached_h, verified = entry
+            if verified or (torch.equal(inputs[0], prot_x)
+                            and torch.equal(inputs[1], prot_edge_index)
+                            and torch.equal(inputs[2], prot_edge_attr)):
+                self._entries[key] = (inputs, cached_h, True)
+                return cached_h
+            self._entries.pop(key, None)
+
+        h_prot = model.encode_protein(prot_x.to(device), prot_edge_index.to(device),
+                                      prot_edge_attr.to(device))
+        if len(self._entries) >= self._max_entries:
+            self._entries.pop(next(iter(self._entries)))
+        self._entries[key] = ((prot_x.clone(), prot_edge_index.clone(), prot_edge_attr.clone()),
+                              h_prot, False)
+        return h_prot
+
+
+def compute_mdn_scores_batch(model, batch_data, device, protein_cache=None, pocket_key=None):
     prot_batch, lig_batch = batch_data
 
-    p_x, p_idx, p_attr, p_b = prot_batch['x'].to(device), prot_batch['edge_index'].to(device), prot_batch['edge_attr'].to(device), prot_batch['batch'].to(device)
     l_x, l_idx, l_attr, l_b = lig_batch['x'].to(device), lig_batch['edge_index'].to(device), lig_batch['edge_attr'].to(device), lig_batch['batch'].to(device)
+    p_b = prot_batch['batch'].to(device)
 
+    amp_enabled = USE_AMP_GLOBAL and device.type == 'cuda'
     with torch.no_grad():
         with torch.amp.autocast(
                 device_type='cuda',
-                enabled=USE_AMP_GLOBAL and device.type == 'cuda',
+                enabled=amp_enabled,
                 dtype=torch.float16):
-            result = model.model(p_x, p_idx, p_attr, p_b, l_x, l_idx, l_attr, l_b)
+            if protein_cache is None:
+                h_prot = model.model.encode_protein(
+                    prot_batch['x'].to(device),
+                    prot_batch['edge_index'].to(device),
+                    prot_batch['edge_attr'].to(device))
+            else:
+                h_prot = protein_cache.get(model.model, prot_batch['x'],
+                                           prot_batch['edge_index'], prot_batch['edge_attr'],
+                                           device, amp_enabled, pocket_key=pocket_key)
+            h_lig = model.model.encode_ligand(l_x, l_idx, l_attr)
+            result = model.model.score_embeddings(h_prot, p_b, h_lig, l_b)
         log_pi, mu, sigma, pair_counts = result
 
         if log_pi is None:
@@ -189,6 +250,12 @@ def check_existing_results(output_csv):
             print(f"Error reading existing results: {e}. Re-running inference.")
     return None
 
+def _file_digest(path):
+    import hashlib
+    with open(path, 'rb') as handle:
+        return hashlib.sha1(handle.read()).hexdigest()[:16]
+
+
 def run_inference_logic(args, device):
     model = VSTrainer.load_from_checkpoint(args.model, map_location=device)
     model.eval()
@@ -207,11 +274,16 @@ def run_inference_logic(args, device):
 
     dataloader = DataLoader(dataset, batch_size=args.batch_size, num_workers=args.num_workers, collate_fn=collate_graphs)
 
+    # One pocket per run: its encoder output is batch-invariant, so encode once.
+    pocket_key = (os.path.abspath(args.pocket), _file_digest(args.pocket))
+    protein_cache = ProteinEmbeddingCache(pocket_key=pocket_key)
+
     results = []
     for batch_data, batch_names, batch_smis, batch_fpaths, batch_indices in tqdm(dataloader, desc="Scoring", unit="batch"):
         if batch_data is None:
             continue
-        scores = compute_mdn_scores_batch(model, batch_data, device)
+        scores = compute_mdn_scores_batch(model, batch_data, device,
+                                          protein_cache=protein_cache, pocket_key=pocket_key)
         for name, score, smi, f_path, m_idx in zip(batch_names, scores, batch_smis, batch_fpaths, batch_indices):
             if score is not None:
                 results.append({"name": name, "score": score, "smi": smi, "f_path": f_path, "m_idx": m_idx})
