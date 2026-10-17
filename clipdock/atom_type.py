@@ -2,7 +2,9 @@ import numpy as np
 from rdkit import Chem
 
 from clipdock.utils.constant import METALS
-from clipdock.utils.mol import cal_atom_charge
+from clipdock.utils.mol import cal_atom_charge, calc_atom_charges
+
+IMIDAZOLE_SMARTS = Chem.MolFromSmarts("[c]1[n][c][n][c]1")
 
 
 def is_imine_nitrogen(nitrogen_atom):
@@ -29,8 +31,7 @@ def is_imidazole_nitrogen(nitrogen_atom):
         return False
 
     mol = nitrogen_atom.GetOwningMol()
-    pattern = Chem.MolFromSmarts("[c]1[n][c][n][c]1")
-    matches = mol.GetSubstructMatches(pattern)
+    matches = mol.GetSubstructMatches(IMIDAZOLE_SMARTS)
     for match in matches:
         if nitrogen_atom.GetIdx() == match[1]:
             return True
@@ -44,19 +45,24 @@ class AtomType:
         self.type_list = None
         self.type_atom_to_id = None
 
-    def assign_atom_type(self, atom):
+    def assign_atom_type(self, atom, charge_info=None):
         pass
 
-    def assign_atom_type_id(self, atom):
-        atom_type = self.assign_atom_type(atom)
+    def assign_atom_type_id(self, atom, charge_info=None):
+        atom_type = self.assign_atom_type(atom, charge_info)
         return self.type_atom_to_id.get(atom_type, self.type_atom_to_id['U'])
 
     def assign_atom_types(self, mol, keep_H=True):
-        if keep_H:
-            atom_types = [self.type_atom_to_id[self.assign_atom_type(atom)] for atom in mol.GetAtoms()]
-        else:
-            atom_types = [self.type_atom_to_id[self.assign_atom_type(atom)] for atom in mol.GetAtoms() if
-                          atom.GetSymbol() != 'H']
+        charge_info = list(zip(*calc_atom_charges(mol)))
+        atom_types = [self.type_atom_to_id[self.assign_atom_type(atom, charge_info[atom.GetIdx()])]
+                      for atom in mol.GetAtoms() if keep_H or atom.GetSymbol() != 'H']
+        return np.ascontiguousarray(atom_types, dtype=np.int32)
+
+    def assign_atom_type_ids(self, mol):
+        charge_info = list(zip(*calc_atom_charges(mol)))
+        atom_types = [self.type_atom_to_id.get(self.assign_atom_type(atom, charge_info[atom.GetIdx()]),
+                                               self.type_atom_to_id['U'])
+                      for atom in mol.GetAtoms()]
         return np.ascontiguousarray(atom_types, dtype=np.int32)
 
 
@@ -77,7 +83,9 @@ class EscoreAtomType(AtomType):
         self.is_h_acceptor_list = np.ascontiguousarray([False for i in range(len(self.type_list))], dtype=bool)
         self.is_h_acceptor_list[8: 13 + 1] = True
 
-    def assign_atom_type(self, atom):
+    def assign_atom_type(self, atom, charge_info=None):
+        if charge_info is None:
+            charge_info = cal_atom_charge(atom)
         symbol = atom.GetSymbol()
         is_aromatic = atom.GetIsAromatic()
         h_num = sum(n.GetAtomicNum() == 1 for n in atom.GetNeighbors())
@@ -86,7 +94,7 @@ class EscoreAtomType(AtomType):
         elif symbol == 'C':
             return 'C'
         elif symbol == 'N':
-            exp_charge, charge, charge_part = cal_atom_charge(atom)
+            exp_charge, charge, charge_part = charge_info
             ring5 = atom.IsInRingSize(5)
             ring6 = atom.IsInRingSize(6)
             donor = h_num > 0
@@ -114,7 +122,7 @@ class EscoreAtomType(AtomType):
                 return 'N_D'
             return 'N'
         elif symbol == 'O':
-            exp_charge, charge, charge_part = cal_atom_charge(atom)
+            exp_charge, charge, charge_part = charge_info
             if charge == 0 and (h_num == 2 or len(atom.GetNeighbors()) == 0):
                 return 'O_DA'
             donor = h_num > 0
@@ -208,7 +216,9 @@ class GscoreAtomType(AtomType):
         self.type_id_to_atom = {i: k for i, k in enumerate(self.type_list)}
         self.type_atom_to_id = {k: i for i, k in enumerate(self.type_list)}
 
-    def assign_atom_type(self, atom):
+    def assign_atom_type(self, atom, charge_info=None):
+        if charge_info is None:
+            charge_info = cal_atom_charge(atom)
         symbol = atom.GetSymbol()
         is_aromatic = atom.GetIsAromatic()
         h_num = sum(n.GetAtomicNum() == 1 for n in atom.GetNeighbors())
@@ -235,7 +245,7 @@ class GscoreAtomType(AtomType):
                 return f'C_{hybrid}'
             return 'C'
         elif symbol == 'N':
-            exp_charge, charge, charge_part = cal_atom_charge(atom)
+            exp_charge, charge, charge_part = charge_info
             ring5 = atom.IsInRingSize(5)
             ring6 = atom.IsInRingSize(6)
             donor = h_num > 0
@@ -286,7 +296,7 @@ class GscoreAtomType(AtomType):
                 return 'N_SP'
             return 'N'
         elif symbol == 'O':
-            exp_charge, charge, charge_part = cal_atom_charge(atom)
+            exp_charge, charge, charge_part = charge_info
             if charge == 0 and (h_num == 2 or len(atom.GetNeighbors()) == 0):
                 return 'O_DA'
             donor = h_num > 0

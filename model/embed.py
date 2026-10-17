@@ -44,8 +44,8 @@ def cpx_embed(rec_mol, lig_mol,
         rec_mol = protonate_mol(Chem.Mol(rec_mol))
         lig_mol = protonate_mol(Chem.Mol(lig_mol))
 
-    rec_types = np.ascontiguousarray([type_class.assign_atom_type_id(atom) for atom in rec_mol.GetAtoms()], dtype=np.int32)
-    lig_types = np.ascontiguousarray([type_class.assign_atom_type_id(atom) for atom in lig_mol.GetAtoms()], dtype=np.int32)
+    rec_types = type_class.assign_atom_type_ids(rec_mol)
+    lig_types = type_class.assign_atom_type_ids(lig_mol)
     rec_coords = np.ascontiguousarray(rec_mol.GetConformer().GetPositions(), dtype=np.float32)
     lig_coords = np.ascontiguousarray(lig_mol.GetConformer().GetPositions(), dtype=np.float32)
 

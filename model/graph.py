@@ -19,7 +19,7 @@ def mol_to_graph(mol, is_protein=False, remove_H=True):
     except Exception:
         pass
 
-    atom_types = [gscore_atom_typer.assign_atom_type_id(atom) for atom in mol.GetAtoms()]
+    atom_types = gscore_atom_typer.assign_atom_type_ids(mol)
 
     if remove_H:
         non_h_indices = [i for i, atom in enumerate(mol.GetAtoms()) if atom.GetSymbol() != 'H']

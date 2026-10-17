@@ -112,15 +112,73 @@ def cal_atom_charge(atom):
     return 0, 0, None
 
 
+def _heavy_degree(atom):
+    return atom.GetDegree() - sum(n.GetAtomicNum() == 1 for n in atom.GetNeighbors())
+
+
+def calc_atom_charges(mol):
+    """Vectorised :func:`cal_atom_charge`: one SMARTS pass per pattern per molecule.
+
+    Each atom is decided by the first pattern that matches it, in the same order
+    as :func:`cal_atom_charge`, so the result is identical.  Only N and O atoms
+    can be decided, since every documented match position is one of those.
+    """
+    n_atoms = mol.GetNumAtoms()
+    exp_charge = [0] * n_atoms
+    charge = [0] * n_atoms
+    charge_part = [None] * n_atoms
+    done = [False] * n_atoms
+
+    n_indices = []
+    o_indices = []
+    for atom in mol.GetAtoms():
+        atomic_num = atom.GetAtomicNum()
+        if atomic_num == 7:
+            n_indices.append(atom.GetIdx())
+        elif atomic_num == 8:
+            o_indices.append(atom.GetIdx())
+
+    for indices, patterns in ((n_indices, CHARGE_PATTERN[:5]), (o_indices, CHARGE_PATTERN[5:])):
+        if not indices:
+            continue
+        for part_idx, (smarts, positions, charges, parts) in enumerate(patterns):
+            matches = mol.GetSubstructMatches(smarts)
+            if not matches:
+                continue
+            for match in matches:
+                for i, pos in enumerate(positions):
+                    atom_idx = match[pos]
+                    if done[atom_idx]:
+                        continue
+                    if charges[i] < 0:
+                        atom = mol.GetAtomWithIdx(atom_idx)
+                        if atom.GetAtomicNum() == 8 and _heavy_degree(atom) > 1:
+                            continue
+                    exp_charge[atom_idx] = charges[i]
+                    charge[atom_idx] = parts[i]
+                    charge_part[atom_idx] = part_idx
+                    done[atom_idx] = True
+
+    # Atoms that no pattern matched fall back to their existing formal charge,
+    # as in cal_atom_charge (only N/O atoms reach that fallback).
+    for atom_idx in n_indices + o_indices:
+        if not done[atom_idx]:
+            formal = mol.GetAtomWithIdx(atom_idx).GetFormalCharge()
+            if formal != 0:
+                exp_charge[atom_idx] = formal
+                charge[atom_idx] = formal
+
+    return exp_charge, charge, charge_part
+
+
 def protonate_mol(rdkit_mol):
     mol = Chem.RemoveAllHs(Chem.Mol(rdkit_mol))
     out_mol = Chem.Mol(mol)
 
-    for atom in mol.GetAtoms():
-        exp_charge, _, _ = cal_atom_charge(atom)
+    exp_charges, _, _ = calc_atom_charges(mol)
+    for atom_idx, exp_charge in enumerate(exp_charges):
         if exp_charge != 0:
-            out_atom = out_mol.GetAtomWithIdx(atom.GetIdx())
-            out_atom.SetFormalCharge(exp_charge)
+            out_mol.GetAtomWithIdx(atom_idx).SetFormalCharge(exp_charge)
     Chem.SanitizeMol(out_mol)
 
     out_mol = Chem.AddHs(out_mol, addCoords=True)
