@@ -35,6 +35,9 @@ all = [
     "pytorch-lightning>=2.5,<2.6",
     "torch>=2.8,<2.9",
 ]
+test = [
+    "pytest>=8,<10",
+]
 
 [project.scripts]
 clipdock = "clipdock.main:main"
@@ -47,3 +50,6 @@ include = ["clipdock*", "model*"]
 
 [tool.setuptools.package-data]
 clipdock = ["*.xml", "*.csv"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
