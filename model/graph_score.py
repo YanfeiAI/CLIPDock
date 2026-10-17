@@ -10,6 +10,7 @@ from collections import defaultdict
 from rdkit import Chem
 from torch.utils.data import DataLoader, IterableDataset
 
+from clipdock.utils.cli import batch_size_arg
 from clipdock.utils.constant import VS_MODEL_WEIGHTS_PATH
 from clipdock.utils.mol import mols_cluster
 from model.graph import protein_to_graph, ligand_to_graph
@@ -19,6 +20,26 @@ from model.train_vs import VSTrainer
 disable_rdkit_logging()
 
 USE_AMP_GLOBAL = True
+
+DEFAULT_BATCH_SIZE = 12
+AUTO_BATCH_CANDIDATES = (96, 48, 24, 12)
+AUTO_BYTES_PER_PAIR = 2560      # measured peak activation per receptor-ligand atom pair
+AUTO_LIGAND_ATOMS = 120         # conservative ligand size for the planning estimate
+AUTO_HEADROOM_BYTES = 1 << 30   # free memory left untouched for everything else
+
+
+def select_batch_size(requested, device, receptor_atoms):
+    """Resolve ``--batch_size``: ``auto`` takes the largest candidate that fits in half the free GPU memory."""
+    if requested != 'auto':
+        return int(requested)
+    if device.type != 'cuda':
+        return DEFAULT_BATCH_SIZE
+    free_bytes = torch.cuda.mem_get_info(device)[0]
+    budget = free_bytes * 0.5 - AUTO_HEADROOM_BYTES
+    for size in AUTO_BATCH_CANDIDATES:
+        if size * receptor_atoms * AUTO_LIGAND_ATOMS * AUTO_BYTES_PER_PAIR <= budget:
+            return size
+    return DEFAULT_BATCH_SIZE
 
 
 def build_parser():
@@ -39,8 +60,9 @@ def build_parser():
                         help='Output filename prefix; .csv is appended automatically')
     parser.add_argument('--device', type=str, default='0',
                         help='CUDA device index, or -1 to force CPU inference')
-    parser.add_argument('--batch_size', type=int, default=12,
-                        help='Inference batch size')
+    parser.add_argument('--batch_size', type=batch_size_arg, default='auto',
+                        help="Inference batch size: a positive integer, or 'auto' to pick one "
+                             "from the free GPU memory (CPU uses 12)")
     parser.add_argument('--num_workers', type=int, default=12,
                         help='DataLoader worker processes')
     parser.add_argument('--top_dir', type=str, default=None,
@@ -272,7 +294,10 @@ def run_inference_logic(args, device):
     else:
         raise ValueError("Either --ligands or --lig_dir must be provided")
 
-    dataloader = DataLoader(dataset, batch_size=args.batch_size, num_workers=args.num_workers, collate_fn=collate_graphs)
+    batch_size = select_batch_size(args.batch_size, device, dataset.graph_rec['num_nodes'])
+    print(f"VS-score batch size: {batch_size} "
+          f"({'auto' if args.batch_size == 'auto' else 'explicit'})")
+    dataloader = DataLoader(dataset, batch_size=batch_size, num_workers=args.num_workers, collate_fn=collate_graphs)
 
     # One pocket per run: its encoder output is batch-invariant, so encode once.
     pocket_key = (os.path.abspath(args.pocket), _file_digest(args.pocket))

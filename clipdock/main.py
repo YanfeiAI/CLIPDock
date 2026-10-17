@@ -2,6 +2,7 @@ import argparse
 import os
 import sys
 
+from clipdock.utils.cli import batch_size_arg
 from clipdock.utils.constant import VERSION
 
 
@@ -96,8 +97,9 @@ def build_parser():
                                  help="Output filename prefix; .csv is appended automatically")
     parser_vs_score.add_argument("--device", default="0",
                                  help="CUDA device index, or -1 for CPU inference")
-    parser_vs_score.add_argument("--batch_size", type=int, default=12,
-                                 help="Inference batch size")
+    parser_vs_score.add_argument("--batch_size", type=batch_size_arg, default='auto',
+                                 help="Inference batch size: a positive integer, or 'auto' to "
+                                      "pick one from the free GPU memory (CPU uses 12)")
     parser_vs_score.add_argument("--num_workers", type=int, default=12,
                                  help="DataLoader worker processes")
     parser_vs_score.add_argument("--top_dir", default=None,
