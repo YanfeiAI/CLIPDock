@@ -87,13 +87,13 @@ def filter_mol_list(score_list, mol_list, energy_range, min_rmsd, pose_num):
 
 
 def process_pose_list(lig_mol, pose_list):
+    # The heavy-atom scaffold is pose-invariant; only the coordinates change.
+    scaffold = Chem.RemoveAllHs(Chem.Mol(lig_mol))
     result = []
     for p in pose_list:
-        output_mol = Chem.RemoveAllHs(Chem.Mol(lig_mol))
-        conf = output_mol.GetConformer()
-        for i in range(output_mol.GetNumAtoms()):
-            conf.SetAtomPosition(i, p[1][i])
-
+        output_mol = Chem.Mol(scaffold)
+        output_mol.GetConformer().SetPositions(
+            np.ascontiguousarray(p[1], dtype=np.float64))
         result.append([p[0], output_mol])
     return result
 

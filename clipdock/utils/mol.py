@@ -253,10 +253,16 @@ def center_on_ref(mol, ref_mol):
     return center_on_coords(mol, ref_coords)
 
 
+def _heavy_only_copy(mol):
+    if mol.GetNumAtoms() == mol.GetNumHeavyAtoms():
+        return Chem.Mol(mol)
+    return Chem.RemoveAllHs(Chem.Mol(mol))
+
+
 def calc_rmsd(mol1, mol2, maxMatches=10000):
     try:
-        rmsd = AllChem.CalcRMS(Chem.RemoveAllHs(Chem.Mol(mol1)),
-                               Chem.RemoveAllHs(Chem.Mol(mol2)),
+        rmsd = AllChem.CalcRMS(_heavy_only_copy(mol1),
+                               _heavy_only_copy(mol2),
                                maxMatches=maxMatches)
     except Exception:
         rmsd = 99
