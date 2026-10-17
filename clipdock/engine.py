@@ -5,13 +5,52 @@ from numpy.random import Generator, PCG64
 from rdkit import Chem
 from scipy.optimize import minimize
 
-from clipdock.scoring import EScorer, GScorer
+from clipdock.scoring import (EScorer, GScorer, _calc_score_cell_list_with_grad_inplace,
+                              _calc_score_intra_with_grad_inplace)
 from clipdock.utils.rot import find_rotatable_bonds
-from clipdock.utils.trans import (apply_transformations, apply_transformations_inplace,
-                                  project_transform_gradients_inplace)
+from clipdock.utils.trans import (apply_transformations, _apply_transformations_inplace,
+                                  _project_pose_gradient_inplace)
 from clipdock.utils.constant import GAUSS_PARAMS_PATH, DOCK_SCORE_K, DOCKING_PARAMS_PATH, DIST_CUTOFF, \
     PAD_SIZE
 from clipdock.utils.mol import charge_mol, mol_gen_3d, protonate_mol
+
+from numba import njit
+
+
+@njit(error_model='numpy', fastmath=True, boundscheck=False, cache=True)
+def _objective_with_grad(x, ori_coords, anchor, rot_atom_pairs, rot_affected_indices,
+                         rot_affected_offsets, lig_atom_types, rec_atom_types, rec_coords,
+                         cell_origin, cell_dims, cell_starts, cell_counts,
+                         e_min, r_min, r_d, uff_e_min, uff_r_min, intra_mask, max_cutoff,
+                         coords, rotation_matrix, internal_coords, internal_grad,
+                         inter_grad, intra_grad, total_grad, param_grad):
+    """One L-BFGS-B evaluation: pose transform, E-score + gradient, gradient projection.
+
+    Bit-for-bit the composition of the separate calls: the kernels keep their own
+    `inline='never'` boundaries, so LLVM cannot contract `a*b+c` into FMA across
+    them and shift a rotation gradient by 1 ULP - enough to change a line search.
+    """
+    _apply_transformations_inplace(
+        x, ori_coords, anchor, rot_atom_pairs, rot_affected_indices,
+        rot_affected_offsets, coords, rotation_matrix)
+
+    inter = _calc_score_cell_list_with_grad_inplace(
+        lig_atom_types, coords, -1, rec_atom_types, rec_coords, cell_origin, cell_dims,
+        cell_starts, cell_counts, e_min, r_min, r_d, max_cutoff, inter_grad)
+    intra = _calc_score_intra_with_grad_inplace(
+        lig_atom_types, coords, -1, uff_e_min, uff_r_min, r_d, max_cutoff, intra_mask,
+        intra_grad)
+
+    for i in range(total_grad.shape[0]):
+        total_grad[i, 0] = inter_grad[i, 0] + intra_grad[i, 0]
+        total_grad[i, 1] = inter_grad[i, 1] + intra_grad[i, 1]
+        total_grad[i, 2] = inter_grad[i, 2] + intra_grad[i, 2]
+
+    _project_pose_gradient_inplace(
+        x, ori_coords, anchor, rot_atom_pairs, rot_affected_indices, rot_affected_offsets,
+        total_grad, param_grad, internal_coords, internal_grad, rotation_matrix)
+
+    return inter + intra
 
 
 class PoseOptimizer:
@@ -125,28 +164,20 @@ class PoseOptimizer:
         return x
 
     def objective_with_grad(self, x):
-        apply_transformations_inplace(
+        score = _objective_with_grad(
             x, self.ori_coords, self.anchor,
-            self.rot_atom_pairs,
-            self.rot_affected_indices,
-            self.rot_affected_offsets,
-            self.coords_buffer,
-            self.pose_rotation_matrix_buffer
-        )
-        score, atom_grad = self.scorer.calc_escore_with_grad(self.coords_buffer)
-        score += self.obj_score_base
-        project_transform_gradients_inplace(
-            x, self.ori_coords, self.anchor,
-            self.rot_atom_pairs,
-            self.rot_affected_indices,
-            self.rot_affected_offsets,
-            atom_grad,
-            self.grad_buffer,
-            self.pose_internal_coords_buffer,
-            self.pose_internal_grad_buffer,
-            self.pose_rotation_matrix_buffer
-        )
-        return score, self.grad_buffer
+            self.rot_atom_pairs, self.rot_affected_indices, self.rot_affected_offsets,
+            self.scorer.lig_atom_types, self.scorer.rec_cell_atom_types,
+            self.scorer.rec_cell_coords, self.scorer.rec_cell_origin,
+            self.scorer.rec_cell_dims, self.scorer.rec_cell_starts,
+            self.scorer.rec_cell_counts, self.scorer.e_min, self.scorer.r_min,
+            self.scorer.r_d, self.scorer.uff_e_min, self.scorer.uff_r_min,
+            self.scorer.lig_intra_mask, self.scorer.max_cutoff,
+            self.coords_buffer, self.pose_rotation_matrix_buffer,
+            self.pose_internal_coords_buffer, self.pose_internal_grad_buffer,
+            self.scorer._inter_grad_buffer, self.scorer._intra_grad_buffer,
+            self.scorer._total_grad_buffer, self.grad_buffer)
+        return score + self.obj_score_base, self.grad_buffer
 
     def BFGS(self, init_x=None, ftol=None):
         if ftol is None:

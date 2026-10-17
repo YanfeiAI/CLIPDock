@@ -51,7 +51,7 @@ def _score_pair_exact(dx, dy, dz, type1, type2, e_min_parm, r_min_parm, r_d_parm
     return score, force_magnitude * dx, force_magnitude * dy, force_magnitude * dz
 
 
-@njit(error_model='numpy', fastmath=True, boundscheck=False, cache=True)
+@njit(error_model='numpy', fastmath=True, boundscheck=False, cache=True, inline='never')
 def _calc_score_cell_list_with_grad_inplace(atom_types1, coords1, lig_ignore_idx,
                                             atom_types2, coords2, cell_origin,
                                             cell_dims, cell_starts, cell_counts,
@@ -185,7 +185,7 @@ def _calc_score_cell_list(atom_types1, coords1, lig_ignore_idx,
     return score
 
 
-@njit(error_model='numpy', fastmath=True, boundscheck=False, cache=True)
+@njit(error_model='numpy', fastmath=True, boundscheck=False, cache=True, inline='never')
 def _calc_score_intra_with_grad_inplace(atom_types, coords, lig_ignore_idx,
                                         e_min_parm, r_min_parm, r_d_parm,
                                         max_cutoff, lig_intra_mask, score_grad):
@@ -303,7 +303,9 @@ class Scorer:
              [ref_mol_coord_min[2] - self.pad_size / 2, ref_mol_coord_max[2] + self.pad_size / 2]], dtype=np.float64)
 
         if build_intra_mask:
-            self.lig_intra_mask, _ = get_intra_mask(self.lig_mol, include_dist=False)
+            intra_mask, _ = get_intra_mask(self.lig_mol, include_dist=False)
+            # Pin the dtype the fused kernel is specialised for.
+            self.lig_intra_mask = np.ascontiguousarray(intra_mask, dtype=np.int64)
         else:
             self.lig_intra_mask = None
         Chem.SanitizeMol(self.lig_mol)

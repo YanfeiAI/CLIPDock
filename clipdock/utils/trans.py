@@ -70,7 +70,7 @@ def _rotate_point_about_axis(px, py, pz, ax, ay, az, ux, uy, uz, angle):
     )
 
 
-@njit(error_model='numpy', fastmath=True, boundscheck=False, cache=True)
+@njit(error_model='numpy', fastmath=True, boundscheck=False, cache=True, inline='never')
 def _apply_transformations_inplace(x, ori_coords, anchor, rot_atom_pairs,
                                    rot_affected_indices, rot_affected_offsets,
                                    coords, rotation_matrix):
@@ -127,7 +127,7 @@ def _apply_transformations_inplace(x, ori_coords, anchor, rot_atom_pairs,
                         rotation_matrix[2, 2] * vz + az + tz)
 
 
-@njit(error_model='numpy', fastmath=True, boundscheck=False, cache=True)
+@njit(error_model='numpy', fastmath=True, boundscheck=False, cache=True, inline='never')
 def _project_pose_gradient_inplace(x, ori_coords, anchor, rot_atom_pairs,
                                    rot_affected_indices, rot_affected_offsets,
                                    atom_grad, param_grad, internal_coords,
