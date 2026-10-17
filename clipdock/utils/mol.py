@@ -171,7 +171,8 @@ def calc_atom_charges(mol):
     return exp_charge, charge, charge_part
 
 
-def protonate_mol(rdkit_mol):
+def charge_mol(rdkit_mol):
+    """Heavy-atom copy with CHARGE_PATTERN formal charges, reusable as a template."""
     mol = Chem.RemoveAllHs(Chem.Mol(rdkit_mol))
     out_mol = Chem.Mol(mol)
 
@@ -180,9 +181,11 @@ def protonate_mol(rdkit_mol):
         if exp_charge != 0:
             out_mol.GetAtomWithIdx(atom_idx).SetFormalCharge(exp_charge)
     Chem.SanitizeMol(out_mol)
-
-    out_mol = Chem.AddHs(out_mol, addCoords=True)
     return out_mol
+
+
+def protonate_mol(rdkit_mol):
+    return Chem.AddHs(charge_mol(rdkit_mol), addCoords=True)
 
 
 def mol_gen_3d(mol, ff="MMFF94", is_addHs=True, maxIters=10000):

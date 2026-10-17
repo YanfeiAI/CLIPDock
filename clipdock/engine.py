@@ -11,7 +11,7 @@ from clipdock.utils.trans import (apply_transformations, apply_transformations_i
                                   project_transform_gradients_inplace)
 from clipdock.utils.constant import GAUSS_PARAMS_PATH, DOCK_SCORE_K, DOCKING_PARAMS_PATH, DIST_CUTOFF, \
     PAD_SIZE
-from clipdock.utils.mol import mol_gen_3d, protonate_mol
+from clipdock.utils.mol import charge_mol, mol_gen_3d, protonate_mol
 
 
 class PoseOptimizer:
@@ -29,9 +29,13 @@ class PoseOptimizer:
         self.lig_mol_h = Chem.Mol(lig_mol_h)
         self.lig_mol = Chem.RemoveAllHs(Chem.Mol(lig_mol_h))
         self.rec_mol_woh = Chem.RemoveAllHs(rec_mol_h)
+        # Protonation depends only on the topology, so the charged heavy-atom
+        # template is built once and re-hydrogenated for each G-score evaluation.
+        self.lig_mol_charged = charge_mol(Chem.Mol(self.lig_mol))
         self.scorer = EScorer(rec_mol_h, self.lig_mol_h, params_file, dist_cutoff, pad_size)
-        self.gauss_scorer = GScorer(rec_mol_h, protonate_mol(Chem.Mol(self.lig_mol)), gscore_params_path, dist_cutoff,
-                                    pad_size)
+        self.gauss_scorer = GScorer(rec_mol_h,
+                                    Chem.AddHs(Chem.Mol(self.lig_mol_charged), addCoords=True),
+                                    gscore_params_path, dist_cutoff, pad_size)
         (self.rot_atom_pairs, self.rot_affected_indices,
          self.rot_affected_offsets) = find_rotatable_bonds(self.lig_mol)
         self.rot_num = len(self.rot_atom_pairs)
@@ -152,6 +156,12 @@ class PoseOptimizer:
         return minimize(self.objective_with_grad, init_x, jac=True, method='L-BFGS-B',
                         options={'ftol': ftol})
 
+    def pose_with_hydrogens(self, coords):
+        """Ligand with explicit hydrogens for ``coords`` (heavy-atom order kept)."""
+        mol = Chem.Mol(self.lig_mol_charged)
+        mol.GetConformer().SetPositions(np.ascontiguousarray(coords, dtype=np.float64))
+        return Chem.AddHs(mol, addCoords=True)
+
     def minimize_pose(self):
         result = self.BFGS()
         coords = apply_transformations(
@@ -159,11 +169,7 @@ class PoseOptimizer:
             self.rot_atom_pairs, self.rot_affected_indices,
             self.rot_affected_offsets,
         )
-        mol = Chem.Mol(self.lig_mol)
-        conf = mol.GetConformer()
-        for atom_idx in range(mol.GetNumAtoms()):
-            conf.SetAtomPosition(atom_idx, coords[atom_idx])
-        mol = protonate_mol(mol)
+        mol = self.pose_with_hydrogens(coords)
         gscore = self.gauss_scorer.calc_gscore(mol.GetConformer().GetPositions())
         score = (self.scorer.calc_escore(coords) + gscore + self.scorer.rot_plt) * DOCK_SCORE_K
         return [[score, coords]]
@@ -175,11 +181,7 @@ class PoseOptimizer:
                                        self.rot_affected_indices,
                                        self.rot_affected_offsets
                                        )
-        mol = Chem.Mol(self.lig_mol)
-        conf = mol.GetConformer()
-        for i in range(mol.GetNumAtoms()):
-            conf.SetAtomPosition(i, coords[i])
-        mol = protonate_mol(mol)
+        mol = self.pose_with_hydrogens(coords)
         gauss = self.gauss_scorer.calc_gscore(mol.GetConformer().GetPositions())
         score = gauss + bfgs_result.fun - self.obj_score_base
         return score
