@@ -178,7 +178,8 @@ def score_input_file(args):
         rec_mol = remove_clashing_bonds(args.receptor)
     if args.ref:
         clipdock_logger.info("--score_only uses input ligand coordinates; --ref is ignored.")
-    scores = score_only(rec_mol, mol_list, lig_pred_H=False,
+    # Docked poses omit explicit hydrogens, but G-score needs them.
+    scores = score_only(rec_mol, mol_list, lig_pred_H=True,
                         gscore_params_path=getattr(args, 'gscore', None))
     save_docked_mol(args.output, scores, mol_list)
     clipdock_logger.info("%8s, %s, %s", "record", "name", "CLIPDock score")
@@ -189,7 +190,7 @@ def score_input_file(args):
         for idx, mol in enumerate(mol_list, 1):
             base, _ = os.path.splitext(args.output)
             analyse_scorer_atom_contrib(Chem.Mol(mol), rec_mol, f"{base}_record{idx}.sdf",
-                                       lig_pred_H=False,
+                                       lig_pred_H=True,
                                        gscore_params_path=getattr(args, 'gscore', None))
     clipdock_logger.info(f"Saving results to {args.output}")
     return scores
