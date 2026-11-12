@@ -9,6 +9,9 @@ from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem
 from rdkit.ML.Cluster import Butina
 
+RETRY_MAX_ITERATIONS = 200
+CHIRALITY_RETRIES = 3
+
 CHARGE_PATTERN = [
     (Chem.MolFromSmarts('[N;X2H1+0,X3H2+1;!a]=[C;!a]([N;X3H2+0,X4H3+1;!a])[N;X3+0,X4+1;!a]'), (0, 2, 3), (1, 0, 0), (1, 1, 1)),
     (Chem.MolFromSmarts('[N;X2H1+0,X3H2+1;!a]=[C;!a][N;X3H2+0,X4H3+1;!a]'), (0, 2), (1, 0), (1, 1)),
@@ -188,6 +191,60 @@ def protonate_mol(rdkit_mol):
     return Chem.AddHs(charge_mol(rdkit_mol), addCoords=True)
 
 
+def cip_labels(mol):
+    Chem.AssignStereochemistry(mol, cleanIt=True, force=True)
+    return dict(Chem.FindMolChiralCenters(mol, includeUnassigned=True,
+                                          useLegacyImplementation=False))
+
+
+def stereochemistry_preserved(mol):
+    expected = cip_labels(Chem.Mol(mol))
+    from_3d = Chem.Mol(mol)
+    Chem.AssignAtomChiralTagsFromStructure(from_3d, replaceExistingTags=True)
+    actual = cip_labels(from_3d)
+    return all(actual.get(atom) == label for atom, label in expected.items()
+               if label in ('R', 'S') and actual.get(atom) in ('R', 'S'))
+
+
+def optimize_conformer(mol, ff, maxIters):
+    res = -1
+    if ff in ['MMFF94s', 'MMFF94'] and AllChem.MMFFGetMoleculeProperties(mol, mmffVariant=ff) is not None:
+        try:
+            res = AllChem.MMFFOptimizeMolecule(mol, mmffVariant=ff, maxIters=maxIters)
+        except Exception:
+            res = -1
+    if res != 0:
+        try:
+            AllChem.UFFOptimizeMolecule(mol, maxIters=maxIters)
+        except Exception:
+            pass
+
+
+def embed_with_stereo_check(mol, seed, ff, maxIters, ref_mol):
+    for random_coords, relax_chirality in ((False, False), (True, False), (True, True)):
+        params = AllChem.ETKDGv3()
+        params.useRandomCoords = random_coords
+        params.enforceChirality = not relax_chirality
+        if random_coords:
+            params.maxIterations = RETRY_MAX_ITERATIONS
+        retries = CHIRALITY_RETRIES if relax_chirality else 1
+        for attempt in range(retries):
+            params.randomSeed = (seed + attempt) % 2147483647
+            candidate = Chem.Mol(mol)
+            candidate.RemoveAllConformers()
+            AllChem.EmbedMolecule(candidate, params)
+            if candidate.GetNumConformers() == 0:
+                continue
+            optimize_conformer(candidate, ff, maxIters)
+            if not stereochemistry_preserved(candidate):
+                continue
+            try:
+                return center_on_ref(candidate, ref_mol)
+            except Exception:
+                return candidate
+    return None
+
+
 def mol_gen_3d(mol, ff="MMFF94", is_addHs=True, maxIters=10000):
     if mol is None:
         return None
@@ -199,36 +256,7 @@ def mol_gen_3d(mol, ff="MMFF94", is_addHs=True, maxIters=10000):
         new_mol.RemoveConformer(confId)
 
     seed = random.SystemRandom().randrange(0, 2147483647)
-    ETKDG = AllChem.ETKDGv3()
-    ETKDG.randomSeed = seed
-    AllChem.EmbedMolecule(new_mol, ETKDG)
-
-    if new_mol.GetNumConformers() == 0:
-        AllChem.EmbedMolecule(new_mol, randomSeed=seed)
-        if new_mol.GetNumConformers() == 0:
-            return None
-
-    res = -1
-    if ff in ['MMFF94s', 'MMFF94'] and AllChem.MMFFGetMoleculeProperties(new_mol, mmffVariant=ff) is not None:
-        try:
-            res = AllChem.MMFFOptimizeMolecule(new_mol, mmffVariant=ff, maxIters=maxIters)
-        except Exception:
-            res = -1
-
-    if res != 0:
-        try:
-            res = AllChem.UFFOptimizeMolecule(new_mol, maxIters=maxIters)
-        except Exception:
-            res = -1
-    if res != 0:
-        pass
-
-    try:
-        new_mol = center_on_ref(new_mol, mol)
-    except Exception:
-        pass
-
-    return new_mol
+    return embed_with_stereo_check(new_mol, seed, ff, maxIters, mol)
 
 
 def smi_gen_3d(smi, ff="MMFF94", is_addHs=True, maxIters=10000):
