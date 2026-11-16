@@ -23,6 +23,14 @@ clipdock --version
 For docking only, without the PyTorch dependencies, use
 `python -m pip install -e .` instead.
 
+Tested on Ubuntu 22.04.5 LTS (x86_64) with Python 3.11.18,
+including a server with two AMD EPYC 9654 CPUs and 377 GiB RAM,
+and a local computer with an AMD Ryzen 9 7945HX and 32 GB RAM
+running Ubuntu under WSL2. Installation on the local computer took
+approximately 21 min. No GPU is required for docking.
+Dependencies are specified in [`environment.yml`](environment.yml) and
+[`pyproject.toml`](pyproject.toml).
+
 ## 2. Usage
 
 Docking runs on CPU. Remove any co-crystallized ligand from the receptor, and
@@ -39,6 +47,12 @@ clipdock \
   --ref data/9iwy_ligand.sdf \
   -o data/9iwy_docked_ligand.sdf
 ```
+
+Expected output: `data/9iwy_docked_ligand.sdf`, containing up to 9 poses with a
+`CLIPDock score` property. On the local computer above, the default settings
+(32 restarts, 9 poses, 8 workers) took 3.4–9.0 s across three runs (median: 3.4 s),
+including JIT compilation in the first run. Observed best scores ranged from
+-10.257 to -10.119. Results may vary due to stochastic optimization.
 
 Dock a ligand from SMILES:
 
@@ -58,8 +72,7 @@ Prepare a screening example library:
 python script/prepare_screening_examples.py
 ```
 
-The generated `data/raw/screening_examples.csv` contains diverse small-molecule
-compounds with names and SMILES.
+The generated `data/raw/screening_examples.csv` contains compound names and SMILES.
 
 ```bash
 clipdock vs \
@@ -73,8 +86,9 @@ clipdock vs \
 
 Before using VS-score, download `vs_model.ckpt` from
 [GitHub Releases](https://github.com/YanfeiAI/CLIPDock/releases) and place it in
-the `model` directory. Use `--model` to load it from another location. VS-score
-may use a GPU. Set `--device -1` to run VS-score on CPU.
+the `model` directory. Use `--model` to load it from another location.
+GPU inference was tested on an NVIDIA GeForce RTX 5090 with driver 580.173.02
+and PyTorch 2.8.0 (CUDA 12.8). Use `--device -1` for CPU inference.
 
 Rescore all docked ligands with VS-score:
 
@@ -88,8 +102,8 @@ clipdock vs-score \
   --device 0
 ```
 
-This writes all VS-score results to `02_vs_score/vs_scores.csv` and the selected
-top 100 poses to `02_vs_score/top100/`.
+This writes all VS-score results to `02_vs_score/vs_scores.csv` and up to 100
+top-ranked poses to `02_vs_score/top100/`.
 
 Lower CLIPDock scores and higher VS-scores are better.
 
@@ -143,9 +157,10 @@ python -m model.train_vs \
 The final checkpoint is `data/training/vs_score/last.ckpt`; pass it with
 `--model` to `clipdock vs-score`.
 
-Benchmark commands use the bundled models by default. To use newly trained
-models, pass `--gscore data/training/gscore/gscore.csv`; for virtual-screening
-enrichment, also pass `--model data/training/vs_score/last.ckpt`.
+Benchmark commands use the default G-score parameters and VS-score checkpoint.
+To use newly trained models, pass `--gscore data/training/gscore/gscore.csv`;
+for virtual-screening enrichment, also pass
+`--model data/training/vs_score/last.ckpt`.
 
 ### 4.2 Docking benchmarks
 
@@ -160,7 +175,7 @@ for split in fragment_test nucleic_acid_associated_test fabp4_test; do
 done
 ```
 
-`--metrics_output` writes a clean summary CSV.
+`--metrics_output` writes a summary CSV.
 
 Prepare the public PoseBusters V2 and PoseX benchmarks from their official
 sources, then evaluate them using the same protocol:
@@ -206,4 +221,4 @@ python script/vs.py all --device 0
 ## 5. License
 
 The CLIPDock source code and released model weights are distributed under the
-MIT License. External benchmark datasets retain their upstream licenses.
+MIT License.
