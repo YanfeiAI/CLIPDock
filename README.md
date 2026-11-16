@@ -23,13 +23,11 @@ clipdock --version
 For docking only, without the PyTorch dependencies, use
 `python -m pip install -e .` instead.
 
-Tested on Ubuntu 22.04.5 LTS (x86_64) with Python 3.11.18,
-including a server with two AMD EPYC 9654 CPUs and 377 GiB RAM,
-and a local computer with an AMD Ryzen 9 7945HX and 32 GB RAM
-running Ubuntu under WSL2. Installation on the local computer took
-approximately 21 min. No GPU is required for docking.
-Dependencies are specified in [`environment.yml`](environment.yml) and
-[`pyproject.toml`](pyproject.toml).
+CLIPDock was tested with Python 3.11.18 on Ubuntu 22.04.5 LTS (x86_64) in two
+environments: a server with two AMD EPYC 9654 CPUs and 377 GiB RAM, and a local
+computer with an AMD Ryzen 9 7945HX and 32 GB RAM running Ubuntu under WSL2.
+Installation on the local computer took approximately 21 min. No GPU is required
+for docking. Dependencies are specified in `environment.yml` and `pyproject.toml`.
 
 ## 2. Usage
 
@@ -49,9 +47,10 @@ clipdock \
 ```
 
 Expected output: `data/9iwy_docked_ligand.sdf`, containing up to 9 poses with a
-`CLIPDock score` property. On the local computer above, the default settings
-(32 restarts, 9 poses, 8 workers) took 3.4–9.0 s across three runs (median: 3.4 s),
-including JIT compilation in the first run. Observed best scores ranged from
+`CLIPDock score` property. On the local computer described above, three runs with
+the default settings (32 restarts, 9 poses, 8 workers) took 3.4–9.0 s
+(median: 3.4 s), including JIT compilation during the first run.
+Observed best scores ranged from
 -10.257 to -10.119. Results may vary due to stochastic optimization.
 
 Dock a ligand from SMILES:
@@ -64,6 +63,10 @@ clipdock \
   -o data/9iwy_docked_ligand.sdf
 ```
 
+To use your own data, replace the example receptor (`-r`), ligand (`-l` or `-s`),
+and reference ligand (`--ref`) with your own inputs. The reference ligand should
+share the receptor's coordinate system.
+
 ### 2.2 Virtual screening
 
 Prepare a screening example library:
@@ -74,6 +77,8 @@ python script/prepare_screening_examples.py
 
 The generated `data/raw/screening_examples.csv` contains compound names and SMILES.
 
+Run virtual screening:
+
 ```bash
 clipdock vs \
   -i data/raw/screening_examples.csv \
@@ -81,6 +86,13 @@ clipdock vs \
   -r data/9iwy_protein.pdb \
   --ref data/9iwy_ligand.sdf
 ```
+
+Results are saved to `results.csv` and `results_sorted.csv` in the output directory.
+
+To screen your own compounds, provide a CSV file with compound names and SMILES
+in the first two columns (`name,smiles`), including a header row. Replace `-i`,
+`-r`, `--ref`, and `-o` with your input CSV, receptor, reference ligand, and output
+directory, respectively.
 
 ### 2.3 VS-score rescoring
 
@@ -104,6 +116,10 @@ clipdock vs-score \
 
 This writes all VS-score results to `02_vs_score/vs_scores.csv` and up to 100
 top-ranked poses to `02_vs_score/top100/`.
+
+To rescore your own docked ligands, provide a receptor pocket PDB with `-p`,
+docked ligand SDF files with `--lig_dir` (or a single SDF with `-l`), and an output
+prefix with `-o`.
 
 Lower CLIPDock scores and higher VS-scores are better.
 
@@ -157,7 +173,8 @@ python -m model.train_vs \
 The final checkpoint is `data/training/vs_score/last.ckpt`; pass it with
 `--model` to `clipdock vs-score`.
 
-Benchmark commands use the default G-score parameters and VS-score checkpoint.
+The benchmarks below use the default G-score parameters and the released
+VS-score checkpoint.
 To use newly trained models, pass `--gscore data/training/gscore/gscore.csv`;
 for virtual-screening enrichment, also pass
 `--model data/training/vs_score/last.ckpt`.
