@@ -1,5 +1,4 @@
 import os
-import re
 import warnings
 
 import numpy as np
@@ -110,105 +109,19 @@ def extract_pocket_from_coords(coords, protein_path, out_pocket_path, remove_wat
     io.save(out_pocket_path, select=selector)
 
 
-def extract_coords_from_mol2(mol2_path):
-    coords = []
-    atom_pattern = re.compile(r'^\s*\d+\s+\S+\s+([-+]?\d*\.\d+)\s+([-+]?\d*\.\d+)\s+([-+]?\d*\.\d+)')
-
-    try:
-        with open(mol2_path, 'r', encoding='utf-8', errors='ignore') as f:
-            content = f.readlines()
-        in_atom_section = False
-        for line in content:
-            line = line.strip()
-            if line.startswith('@<TRIPOS>ATOM'):
-                in_atom_section = True
-                continue
-            elif line.startswith('@<TRIPOS>'):
-                in_atom_section = False
-                continue
-            if in_atom_section:
-                match = atom_pattern.match(line)
-                if match:
-                    try:
-                        x = float(match.group(1))
-                        y = float(match.group(2))
-                        z = float(match.group(3))
-                        coords.append([x, y, z])
-                    except ValueError:
-                        continue
-                else:
-                    parts = line.split()
-                    if len(parts) >= 6:
-                        try:
-                            x = float(parts[2])
-                            y = float(parts[3])
-                            z = float(parts[4])
-                            coords.append([x, y, z])
-                        except (ValueError, IndexError):
-                            continue
-        return np.array(coords)
-    except Exception:
-        pass
-    return np.array([])
-
-
-def extract_coords_from_sdf(sdf_path):
-    coords = []
-    in_molecule = False
-    atom_count = 0
-    read_atoms = False
-    try:
-        with open(sdf_path, 'r', encoding='utf-8', errors='ignore') as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith('$$$$') and in_molecule:
-                    break
-                if read_atoms and atom_count > 0:
-                    parts = line.split()
-                    if len(parts) >= 4:
-                        try:
-                            x = float(parts[0])
-                            y = float(parts[1])
-                            z = float(parts[2])
-                            coords.append([x, y, z])
-                            atom_count -= 1
-                        except ValueError:
-                            continue
-                    if atom_count == 0:
-                        read_atoms = False
-                elif in_molecule and len(line.split()) == 11:
-                    parts = line.split()
-                    if len(parts) >= 4:
-                        try:
-                            atom_count = int(parts[0])
-                            if atom_count > 0:
-                                read_atoms = True
-                                next(f)
-                        except ValueError:
-                            continue
-                elif not in_molecule and len(line) > 0 and not line.startswith(' '):
-                    in_molecule = True
-        return np.array(coords)
-    except Exception:
-        pass
-    return np.array([])
-
-
 def read_coords(file_path):
-    ref_mol = read_mol(file_path)
-    coords = None
-    if ref_mol is None:
-        if file_path.endswith('.mol2'):
-            coords = extract_coords_from_mol2(file_path)
-        elif file_path.endswith('.sdf'):
-            coords = extract_coords_from_sdf(file_path)
-    else:
-        coords = np.array([ref_mol.GetConformer().GetAtomPosition(i) for i in range(ref_mol.GetNumAtoms())])
-    return coords
+    file_path = os.fspath(file_path)
+    for sanitize in (True, False):
+        mol = read_mol(file_path, try_mol=False, sanitize=sanitize, removeHs=False)
+        if mol is None or mol.GetNumConformers() == 0:
+            continue
+        heavy = np.array([atom.GetAtomicNum() != 1 for atom in mol.GetAtoms()], dtype=bool)
+        coords = mol.GetConformer().GetPositions()[heavy]
+        if coords.size > 0 and np.isfinite(coords).all():
+            return coords
+    raise ValueError(f"Failed to read reference coordinates: {file_path}")
 
 
 def extract_pocket(ref_ligand_path, protein_path, out_pocket_path, remove_water=False, remove_cofactor=False, threshold=8.0, exclude_coords=None):
     coords = read_coords(ref_ligand_path)
-    if coords is None:
-        raise ValueError('coords is None')
     extract_pocket_from_coords(coords, protein_path, out_pocket_path, remove_water, remove_cofactor, threshold, exclude_coords)

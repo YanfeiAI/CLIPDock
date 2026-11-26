@@ -12,8 +12,10 @@ from clipdock.engine import PoseOptimizer
 from clipdock.engine import score_only
 from clipdock.utils.calc import batch_process
 from clipdock.utils.constant import DOCKING_PARAMS_PATH, GAUSS_PARAMS_PATH, VERSION
-from clipdock.utils.mol import protonate_mol, calc_rmsd, center_on_ref, read_mol, mol_gen_3d
-from clipdock.utils.pocket import extract_pocket, remove_clashing_bonds
+from clipdock.utils.mol import (protonate_mol, calc_rmsd, center_on_coords, center_on_ref,
+                                read_mol, mol_gen_3d)
+from clipdock.utils.pocket import (extract_pocket, extract_pocket_from_coords, read_coords,
+                                   remove_clashing_bonds)
 from clipdock.utils.timing import format_timing, take_timing_snapshot, timing_delta
 from clipdock.visualize import analyse_scorer_atom_contrib
 
@@ -208,10 +210,14 @@ def main(args):
         return min(scores)
 
     receptor = args.receptor
+    ref_coords = None
+    if args.ref is not None:
+        ref_coords = read_coords(args.ref)
+
     if not args.skip_extract_pocket:
         pocket_path = os.path.splitext(receptor)[0] + "_pocket.pdb"
-        if args.ref is not None:
-            extract_pocket(args.ref, receptor, pocket_path, remove_water=True)
+        if ref_coords is not None:
+            extract_pocket_from_coords(ref_coords, receptor, pocket_path, remove_water=True)
             receptor = pocket_path
             clipdock_logger.info(f"Pre-extracted pocket saved to: {pocket_path}")
         elif args.ligand is not None:
@@ -240,13 +246,10 @@ def main(args):
             raise ValueError("Failed to read Ligand.")
         lig_mol.SetProp("_Name", os.path.basename(args.output).split('.')[0])
 
-    if args.ref is not None:
-        ref_mol = read_mol(args.ref)
-    elif args.ligand is not None:
-        ref_mol = read_mol(args.ligand)
-    else:
-        ref_mol = Chem.Mol(rec_mol)
-    lig_mol = center_on_ref(lig_mol, ref_mol)
+    if ref_coords is not None:
+        lig_mol = center_on_coords(lig_mol, ref_coords)
+    elif args.ligand is None:
+        lig_mol = center_on_ref(lig_mol, rec_mol)
     clipdock_logger.info(f"Loading ligand: {lig_info}, {lig_mol.GetNumAtoms()} atoms")
 
     if args.workers is None:
